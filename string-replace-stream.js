@@ -86,8 +86,8 @@ module.exports = function replaceStream(search, replace, opts) {
           matchPos = 0;
           matchStart++;
         } else {
-          matchPos = table[matchPos];
           matchStart += matchPos - table[matchPos];
+          matchPos = table[matchPos];
         }
       }
       flush(this);

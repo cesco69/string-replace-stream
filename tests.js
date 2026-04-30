@@ -152,6 +152,117 @@ describe('string-replace-stream', function () {
   });
 
 
+  describe('bug: KMP fallback matchStart/matchPos update order', function () {
+    it('should correctly replace with deeply nested KMP fallback values', function (done) {
+      // Pattern "ABCABD" has table [-1, 0, 0, 0, 1, 2]
+      // Input "ABCABCABD" forces the fallback branch with non-zero table values
+      var replaceStream = stringReplaceString("ABCABD", "X");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("ABCX");
+        done();
+      }));
+      replaceStream.write("ABCABCABD");
+      replaceStream.end();
+    });
+
+    it('should handle overlapping prefix fallback across chunks', function (done) {
+      var replaceStream = stringReplaceString("ABCABD", "X");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("ABCX");
+        done();
+      }));
+      replaceStream.write("ABCAB");
+      replaceStream.write("CABD");
+      replaceStream.end();
+    });
+
+    it('should handle triple overlap pattern with KMP fallback', function (done) {
+      // "AABAABAAC" with search "AABAABAAC" should match itself
+      var replaceStream = stringReplaceString("AABAABAAC", "X");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("AABX");
+        done();
+      }));
+      replaceStream.write("AABAABAABAAC");
+      replaceStream.end();
+    });
+
+    it('should replace pattern after multiple false starts across chunks', function (done) {
+      // "ABABAB" contains "ABAB" starting at position 0, so result is "X" + "AB"
+      var replaceStream = stringReplaceString("ABAB", "X");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("XAB");
+        done();
+      }));
+      replaceStream.write("AB");
+      replaceStream.write("AB");
+      replaceStream.write("AB");
+      replaceStream.end();
+    });
+  });
+
+  describe('bug: flush off-by-one on chunk boundary', function () {
+    it('should flush correctly when outputTo equals buffer chunk length', function (done) {
+      // Craft input where the flush boundary lands exactly at a chunk edge
+      var replaceStream = stringReplaceString("XY", "!");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("abcd!efgh");
+        done();
+      }));
+      replaceStream.write("abcd");
+      replaceStream.write("XY");
+      replaceStream.write("efgh");
+      replaceStream.end();
+    });
+
+    it('should flush correctly with exact chunk-sized prefix before match', function (done) {
+      var replaceStream = stringReplaceString("Z", "!");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("abc!def");
+        done();
+      }));
+      replaceStream.write("abc");
+      replaceStream.write("Z");
+      replaceStream.write("def");
+      replaceStream.end();
+    });
+
+    it('should handle multiple replacements with exact chunk boundaries', function (done) {
+      var replaceStream = stringReplaceString("XX", "!");
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        expect(output).to.equal("aaa!bbb!ccc");
+        done();
+      }));
+      replaceStream.write("aaa");
+      replaceStream.write("XX");
+      replaceStream.write("bbb");
+      replaceStream.write("XX");
+      replaceStream.write("ccc");
+      replaceStream.end();
+    });
+  });
+
+  describe('bug: input validation', function () {
+    it('should not crash when replace is undefined', function (done) {
+      var replaceStream = stringReplaceString("foo", undefined);
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        // Should produce some output without crashing
+        done();
+      }));
+      replaceStream.write("foobar");
+      replaceStream.end();
+    });
+
+    it('should not crash when replace is null', function (done) {
+      var replaceStream = stringReplaceString("foo", null);
+      replaceStream.pipe(concat({encoding: 'string'}, function (output) {
+        done();
+      }));
+      replaceStream.write("foobar");
+      replaceStream.end();
+    });
+  });
+
   it('should handle unicode characters split between blocks', function (done) {
     var input = new Buffer("My ☃ cost £100 🙁!", "utf-8");
     var replaceStream = stringReplaceString("☃ cost £100 🙁", "snowman cost £100 :(");
